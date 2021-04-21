@@ -34,7 +34,7 @@ bl_info = {
     "name": "Newton's Cradle",
     "description": "Creates a Newton's cradle model.",
     "author": "Joe Broesele",
-    "version": (0, 0, 1),
+    "version": (0, 0, 2),
     "blender": (2, 80, 0),
     "category": "Object"
 }
@@ -53,6 +53,7 @@ class NewtonsCradle(bpy.types.Operator):
     bl_label = "Newton's Cradle"            # Display name in the interface.
     bl_options = {'REGISTER', 'UNDO'}
 
+    scaleSize                           = bpy.props.FloatProperty(name="Scale Size", default=1.00, min=0.01, max=10.00)
     ballCount                           = bpy.props.IntProperty(name="Ball Count", default=5, min=3, max=10)
     ballStartAngle                      = bpy.props.FloatProperty(name="Ball Angle at Start", default=45.00, min=0.00, max=180.00)
     # Ball body properties.
@@ -68,13 +69,13 @@ class NewtonsCradle(bpy.types.Operator):
     ballBodyIndividualMaterial          = bpy.props.BoolProperty(name="Individual Material for Balls", default=False)
     # Ball suspension properties.
     ballSuspensionPrefix                = bpy.props.StringProperty(name="Ball Suspension Prefix", default="BallSuspension")
-    ballSuspensionDiameter              = bpy.props.FloatProperty(name="Ball Suspension Diameter", default=0.05, min=0.01, max=1.00)
+    ballSuspensionDiameter              = bpy.props.FloatProperty(name="Ball Suspension Diameter", default=0.050, min=0.010, max=1.000, precision=3)
     ballSuspensionLength                = bpy.props.FloatProperty(name="Ball Suspension Length", default=0.10, min=0.01, max=1.00)
     ballSuspensionVertices              = 32
     ballSuspensionIndividualMaterial    = bpy.props.BoolProperty(name="Individual Material for Ball Suspensions", default=False)
     # Ball wire properties.
     ballWirePrefix                      = bpy.props.StringProperty(name="Ball Wire Prefix", default="BallWire")
-    ballWireThickness                   = bpy.props.FloatProperty(name="Ball Wire Thickness", default=0.025, min=0.001, max=1.000)
+    ballWireThickness                   = bpy.props.FloatProperty(name="Ball Wire Thickness", default=0.025, min=0.001, max=1.000, precision=3)
     ballWireIndividualMaterial          = bpy.props.BoolProperty(name="Individual Material for Ball Wires", default=False)
     # Ball hinge properties.
     ballHingePrefix                     = bpy.props.StringProperty(name="Ball Hinge Prefix", default="BallHinge")
@@ -90,10 +91,22 @@ class NewtonsCradle(bpy.types.Operator):
 
 
     def execute(self, context):
-        # Create a new collaction.
-        collection = bpy.data.collections.new('Newton\'s Cardle')   # Create a new collection.
-        bpy.context.scene.collection.children.link(collection)      # Add the collection to the scene collection.
-        bpy.context.view_layer.active_layer_collection = bpy.context.view_layer.layer_collection.children[collection.name]  # Set the new collection as active.
+        # Create the main collection.
+        self.collectionMain = bpy.data.collections.new("Newton's Cardle")   # Create a main collection.
+        bpy.context.scene.collection.children.link(self.collectionMain)     # Add the main collection to the scene collection.
+        # Create a sub-collection for the balls.
+        self.collectionBalls = bpy.data.collections.new("Balls")
+        bpy.context.scene.collection.children[self.collectionMain.name].children.link(self.collectionBalls)
+        # Create a sub-collection for the frame.
+        self.collectionFrame = bpy.data.collections.new("Cradle Frame")
+        bpy.context.scene.collection.children[self.collectionMain.name].children.link(self.collectionFrame)
+        # Save the current collection.
+        collectionSaveOrig = bpy.context.view_layer.active_layer_collection
+        # Set the main collection as active.
+        bpy.context.view_layer.active_layer_collection = bpy.context.view_layer.layer_collection.children[self.collectionMain.name]
+
+        # Check the properties and correct them if needed
+        self.check_properties()
 
         # Create the support frame.
         self.create_frame()
@@ -110,12 +123,68 @@ class NewtonsCradle(bpy.types.Operator):
         ballHingeArrowsName = self.ballHingePrefix + 'Arrow_{0:02d}'.format(1)
         self.rotate_object(bpy.data.objects[ballHingeArrowsName], self.ballStartAngle, 'Z')
 
+        # Resize the Newton's cradle.
+        self.resize()
+
+        # Restore the original collection.
+        bpy.context.view_layer.active_layer_collection = collectionSaveOrig
+
         return {'FINISHED'}
+
+
+
+    def check_properties(self):
+        '''Check the properties and correct them if needed.'''
+        # Ball body properties.
+        if not self.ballBodyPrefix:
+            self.ballBodyPrefix = "BallBody"
+        # Ball suspension properties.
+        if not self.ballSuspensionPrefix:
+            self.ballSuspensionPrefix = "BallSuspension"
+        if self.ballSuspensionDiameter < 0.1:
+            if self.ballSuspensionDiameter < self.ballWireThickness * 1.5:
+                self.ballSuspensionDiameter = self.ballWireThickness * 1.5
+        elif self.ballSuspensionDiameter < 0.2:
+            if self.ballSuspensionDiameter < self.ballWireThickness * 1.3:
+                self.ballSuspensionDiameter = self.ballWireThickness * 1.3
+        else:
+            if self.ballSuspensionDiameter < self.ballWireThickness * 1.2:
+                self.ballSuspensionDiameter = self.ballWireThickness * 1.2
+        if self.ballSuspensionLength > self.ballBodyDiameter:
+            self.ballSuspensionLength = self.ballBodyDiameter
+        # Ball wire properties.
+        if not self.ballWirePrefix:
+            self.ballWirePrefix = "BallWire"
+        if self.ballWireThickness > self.ballBodyDiameter * 0.5:
+            self.ballWireThickness = self.ballBodyDiameter * 0.5
+            if self.ballSuspensionDiameter < self.ballWireThickness:
+                self.ballSuspensionDiameter = self.ballWireThickness
+        # Ball hinge properties.
+        if not self.ballHingePrefix:
+            self.ballHingePrefix = "BallHinge"
+        # Frame properties.
+        if not self.framePrefix:
+            self.framePrefix = "Frame"
+        if self.frameThickness > self.ballBodyDiameter:
+            self.frameThickness = self.ballBodyDiameter
+        if self.frameWidth < self.ballBodyDiameter + self.frameThickness:
+            self.frameWidth = self.ballBodyDiameter + self.frameThickness
+        if self.frameHeigtBelowBalls < self.ballBodyDiameter / 2:
+            self.frameHeigtBelowBalls = self.ballBodyDiameter / 2
+        if self.frameHeigtAboveBalls < self.ballBodyDiameter + self.ballSuspensionDiameter + self.frameThickness:
+            self.frameHeigtAboveBalls = self.ballBodyDiameter + self.ballSuspensionDiameter + self.frameThickness
+        if self.frameCornerRadius > self.frameWidth * 0.4:
+            self.frameCornerRadius = self.frameWidth * 0.4
+        if self.frameCornerRadius > (self.frameHeigtBelowBalls + self.frameHeigtAboveBalls) * 0.4:
+            self.frameCornerRadius = (self.frameHeigtBelowBalls + self.frameHeigtAboveBalls) * 0.4
 
 
 
     def create_frame(self):
         '''Create the frame for hanging the balls.'''
+        # Set the frame collection as active.
+        bpy.context.view_layer.active_layer_collection = bpy.context.view_layer.layer_collection.children[self.collectionMain.name].children[self.collectionFrame.name]
+        # Use a nurbs path to create the frame.
         bpy.ops.curve.primitive_nurbs_path_add()            # Create default path.
         bpy.ops.object.editmode_toggle()                    # Switch to edit mode.
         bpy.ops.curve.select_all(action='SELECT')           # Select the entire path.
@@ -162,7 +231,7 @@ class NewtonsCradle(bpy.types.Operator):
         bpy.ops.object.editmode_toggle()                    # Return the scene to object mode.
         frameName = self.framePrefix
         bpy.context.active_object.name = frameName
-        # Fix handles.
+        # Fix the handles of the bezier curve used for the frame.
         # For the formula of the handle length see here:
         # https://stackoverflow.com/questions/1734745/how-to-create-circle-with-b%C3%A9zier-curves
         handleVectorLength = (4 / 3) * math.tan(math.pi / (2 * 4)) * self.frameCornerRadius
@@ -211,6 +280,8 @@ class NewtonsCradle(bpy.types.Operator):
 
     def create_ball(self, ballNum, ballLocation):
         '''Create a ball with suspension, wires and a hinge.'''
+        # Set the balls collection as active.
+        bpy.context.view_layer.active_layer_collection = bpy.context.view_layer.layer_collection.children[self.collectionMain.name].children[self.collectionBalls.name]
         # Create ball body.
         bpy.ops.mesh.primitive_uv_sphere_add(location   = ballLocation,
                                              segments   = self.ballBodySegments,
@@ -305,6 +376,9 @@ class NewtonsCradle(bpy.types.Operator):
         bpy.data.objects[ballHingeArrowsName].rigid_body_constraint.object2 = bpy.data.objects[ballHingeCubeName]
 #        bpy.data.objects[ballHingeArrowsName].hide_viewport = True
         bpy.data.objects[ballHingeArrowsName].hide_render = True
+        # Parent the cube for fixing the ball to the hinge arrows.
+        bpy.data.objects[ballHingeCubeName].parent = bpy.data.objects[ballHingeArrowsName]
+        bpy.data.objects[ballHingeCubeName].matrix_parent_inverse = bpy.data.objects[ballHingeArrowsName].matrix_world.inverted()
         # Parent the ball body to the hinge arrows.
         bpy.data.objects[ballBodyName].parent = bpy.data.objects[ballHingeArrowsName]
         bpy.data.objects[ballBodyName].matrix_parent_inverse = bpy.data.objects[ballHingeArrowsName].matrix_world.inverted()
@@ -312,10 +386,12 @@ class NewtonsCradle(bpy.types.Operator):
         # Create wires to hang the ball.
         # Wire.
         ballWireVertex1 = ballHingeLocation
-        ballWireVertex2 = (ballSuspensionLocation[0], ballSuspensionLocation[1] + 0.6 * self.ballSuspensionLength, ballSuspensionLocation[2] + 0.1 * self.ballSuspensionDiameter)
-        ballWireVertex3 = ballSuspensionLocation
-        ballWireVertex4 = (ballWireVertex2[0], -ballWireVertex2[1], ballWireVertex2[2])
-        ballWireVertex5 = (ballWireVertex1[0], -ballWireVertex1[1], ballWireVertex1[2])
+        ballWireVertex2 = (ballSuspensionLocation[0], ballSuspensionLocation[1] + 0.5 * self.ballSuspensionLength + self.ballWireThickness, ballSuspensionLocation[2] + 0.5 * self.ballWireThickness)
+        ballWireVertex3 = (ballSuspensionLocation[0], ballSuspensionLocation[1] + 0.5 * self.ballSuspensionLength, ballSuspensionLocation[2])
+        ballWireVertex4 = ballSuspensionLocation
+        ballWireVertex5 = (ballWireVertex3[0], -ballWireVertex3[1], ballWireVertex3[2])
+        ballWireVertex6 = (ballWireVertex2[0], -ballWireVertex2[1], ballWireVertex2[2])
+        ballWireVertex7 = (ballWireVertex1[0], -ballWireVertex1[1], ballWireVertex1[2])
         bpy.ops.curve.primitive_nurbs_path_add(location = ballLocation) # Create default path.
         bpy.ops.object.editmode_toggle()                    # Switch to edit mode.
         bpy.ops.curve.select_all(action='SELECT')           # Select the entire path.
@@ -325,8 +401,10 @@ class NewtonsCradle(bpy.types.Operator):
         bpy.ops.curve.vertex_add(location = ballWireVertex3)
         bpy.ops.curve.vertex_add(location = ballWireVertex4)
         bpy.ops.curve.vertex_add(location = ballWireVertex5)
+        bpy.ops.curve.vertex_add(location = ballWireVertex6)
+        bpy.ops.curve.vertex_add(location = ballWireVertex7)
         bpy.ops.object.editmode_toggle()                    # Return the scene to object mode.
-        ballWireName = self.ballWirePrefix + 'Wire_{0:02d}'.format(ballNum + 1)
+        ballWireName = self.ballWirePrefix + '_{0:02d}'.format(ballNum + 1)
         bpy.context.active_object.name = ballWireName
         bpy.data.objects[ballWireName].data.bevel_depth      = self.ballWireThickness / 2
         bpy.data.objects[ballWireName].data.bevel_mode       = 'ROUND'
@@ -335,18 +413,28 @@ class NewtonsCradle(bpy.types.Operator):
         ballWireFixation1Location = (ballLocation[0], ballLocation[1] + self.frameWidth / 2, ballLocation[2] + self.frameHeigtAboveBalls)
         bpy.ops.mesh.primitive_torus_add(location     = ballWireFixation1Location,
                                          rotation     = (0, math.radians(90), 0),
-                                         major_radius = self.frameThickness / 2 + self.ballWireThickness / 2,
-                                         minor_radius = self.ballWireThickness / 2)
-        ballWireFixation1Name = self.ballWirePrefix + 'WireFixation1_{0:02d}'.format(ballNum + 1)
+                                         major_radius = self.frameThickness / 2 + self.ballWireThickness / 2 * 1.04,
+                                         minor_radius = self.ballWireThickness / 2 * 1.04)
+        ballWireFixation1Name = self.ballWirePrefix + 'Fixation1_{0:02d}'.format(ballNum + 1)
         bpy.context.active_object.name = ballWireFixation1Name
         ballWireFixation2Location = (ballWireFixation1Location[0], -ballWireFixation1Location[1], ballWireFixation1Location[2])
         bpy.ops.mesh.primitive_torus_add(location     = ballWireFixation2Location,
                                          rotation     = (0, math.radians(90), 0),
-                                         major_radius = self.frameThickness / 2 + self.ballWireThickness / 2,
-                                         minor_radius = self.ballWireThickness / 2)
-        ballWireFixation2Name = self.ballWirePrefix + 'WireFixation2_{0:02d}'.format(ballNum + 1)
+                                         major_radius = self.frameThickness / 2 + self.ballWireThickness / 2 * 1.04,
+                                         minor_radius = self.ballWireThickness / 2 * 1.04)
+        ballWireFixation2Name = self.ballWirePrefix + 'Fixation2_{0:02d}'.format(ballNum + 1)
         bpy.context.active_object.name = ballWireFixation2Name
-        # Add material to the ball wire and the ball wire fixation.
+        # Set smooth shading mode for the wire fixations.
+        bpy.data.objects[ballWireFixation1Name].data.polygons.foreach_set('use_smooth',  [True] * len(bpy.data.objects[ballWireFixation1Name].data.polygons))
+        bpy.data.objects[ballWireFixation1Name].data.update()
+        bpy.data.objects[ballWireFixation2Name].data.polygons.foreach_set('use_smooth',  [True] * len(bpy.data.objects[ballWireFixation2Name].data.polygons))
+        bpy.data.objects[ballWireFixation2Name].data.update()
+        # Move the wire fixations to the frame collection.
+        bpy.context.scene.collection.children[self.collectionMain.name].children[self.collectionFrame.name].objects.link(bpy.data.objects[ballWireFixation1Name])
+        bpy.context.scene.collection.children[self.collectionMain.name].children[self.collectionBalls.name].objects.unlink(bpy.data.objects[ballWireFixation1Name])
+        bpy.context.scene.collection.children[self.collectionMain.name].children[self.collectionFrame.name].objects.link(bpy.data.objects[ballWireFixation2Name])
+        bpy.context.scene.collection.children[self.collectionMain.name].children[self.collectionBalls.name].objects.unlink(bpy.data.objects[ballWireFixation2Name])
+        # Add material to the ball wire and the wire fixation.
         ballWireMaterialName = 'Material_' + self.ballWirePrefix
         if self.ballWireIndividualMaterial:
             ballWireMaterialName += '_{0:02d}'.format(ballNum + 1)
@@ -399,6 +487,27 @@ class NewtonsCradle(bpy.types.Operator):
                 frameMaterial.diffuse_color                 = (0.40, 0.40, 0.40, 1.0)   # R, G, B, A
                 frameMaterial.roughness                     = 0.5
                 frameMaterial.specular_intensity            = 0.5
+
+
+
+    def resize(self):
+        '''Resize the Newton's cradle.'''
+        # Deselect all objects.
+        bpy.ops.object.select_all(action='DESELECT')
+        # Select the objects to be scaled.
+        for ballNum in range(self.ballCount):
+            ballHingeArrowsName = self.ballHingePrefix + 'Arrow_{0:02d}'.format(ballNum + 1)
+            bpy.data.objects[ballHingeArrowsName].select_set(state=True)
+            ballWireFixation1Name = self.ballWirePrefix + 'Fixation1_{0:02d}'.format(ballNum + 1)
+            bpy.data.objects[ballWireFixation1Name].select_set(state=True)
+            ballWireFixation2Name = self.ballWirePrefix + 'Fixation2_{0:02d}'.format(ballNum + 1)
+            bpy.data.objects[ballWireFixation2Name].select_set(state=True)
+        frameName = self.framePrefix
+        bpy.data.objects[frameName].select_set(state=True)
+        # Resize the selected objects.
+        bpy.ops.transform.resize(value=(self.scaleSize, self.scaleSize, self.scaleSize))
+        # Deselect all objects.
+        bpy.ops.object.select_all(action='DESELECT')
 
 
 
